@@ -1,0 +1,8 @@
+dist/
+.vercel/
+node_modules/
+__pycache__/
+*.pyc
+
+.vercel
+.env*
