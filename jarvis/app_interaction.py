@@ -33,36 +33,59 @@ class AppInteractor:
             raise RuntimeError("App interaction support is not installed.") from exc
         return Desktop(backend="uia")
 
-    def _find_window(self, query: str):
+    def _match_window(self, needle: str):
+        matches = []
+        for window in self._desktop().windows():
+            try:
+                title = window.window_text().strip()
+                if title and window.is_visible() and needle in title.lower():
+                    matches.append(
+                        (
+                            0 if title.lower() == needle else 1,
+                            len(title),
+                            window,
+                            title,
+                        )
+                    )
+            except Exception:
+                continue
+        if matches:
+            _, _, window, title = min(matches, key=lambda item: item[:2])
+            return window, title
+        return None
+
+    def _find_window(self, query: str, launch: bool = True):
         needle = " ".join(query.lower().split())
         if not needle:
             raise ValueError("An app name is required.")
-        opened = False
-        deadline = time.monotonic() + 15
+        # Fast path: the window is already open (the common case once we open
+        # the app ahead of any confirmation), so return without launching.
+        found = self._match_window(needle)
+        if found:
+            return found
+        if not launch:
+            raise ValueError(f"I couldn't find a visible {query} window.")
+        # Launch first, then give the app a generous, separate window to appear.
+        # A freshly launched app can take several seconds to paint its window,
+        # so the timeout starts counting from the launch, not from the request.
+        self.controller.open_app(query)
+        deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
-            matches = []
-            for window in self._desktop().windows():
-                try:
-                    title = window.window_text().strip()
-                    if title and window.is_visible() and needle in title.lower():
-                        matches.append(
-                            (
-                                0 if title.lower() == needle else 1,
-                                len(title),
-                                window,
-                                title,
-                            )
-                        )
-                except Exception:
-                    continue
-            if matches:
-                _, _, window, title = min(matches, key=lambda item: item[:2])
-                return window, title
-            if not opened:
-                self.controller.open_app(query)
-                opened = True
             time.sleep(0.5)
+            found = self._match_window(needle)
+            if found:
+                return found
         raise ValueError(f"I couldn't find or open a visible {query} window.")
+
+    def ensure_window(self, app_name: str) -> dict[str, str]:
+        """Open the app (if needed) and wait for its window to appear.
+
+        Called before the paste confirmation so the destination is launched and
+        ready ahead of time — the confirmed action then never has to launch an
+        app and wait on it, which is what used to time out mid-open.
+        """
+        _, title = self._find_window(app_name)
+        return {"app": app_name, "window_title": title}
 
     @classmethod
     def _useful_text(cls, text: str, app_name: str) -> bool:
@@ -122,11 +145,23 @@ class AppInteractor:
         }
 
     def paste_into_app(self, app_name: str, text: str) -> str:
-        window, title = self._find_window(app_name)
-        window.set_focus()
-        time.sleep(0.25)
-        focused_title = self.controller.foreground_window().get("title", "")
-        if app_name.lower() not in focused_title.lower():
+        # The destination was opened ahead of this confirmed step, so it should
+        # already be present; don't relaunch it here.
+        window, title = self._find_window(app_name, launch=False)
+        # A window can be visible but not yet foreground right after it opens, so
+        # retry the focus a few times instead of failing on the first check.
+        needle = app_name.lower()
+        focused_title = ""
+        for attempt in range(6):
+            try:
+                window.set_focus()
+            except Exception:
+                pass
+            time.sleep(0.25 if attempt == 0 else 0.5)
+            focused_title = self.controller.foreground_window().get("title", "")
+            if needle in focused_title.lower():
+                break
+        if needle not in focused_title.lower():
             raise RuntimeError(f"Windows did not focus the intended {app_name} window.")
 
         candidates = []

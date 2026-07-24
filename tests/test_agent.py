@@ -132,6 +132,10 @@ class FakeAppInteractor:
         self.calls.append(("read", app))
         return {"app": app, "window_title": app, "text": self.private_text}
 
+    def ensure_window(self, app):
+        self.calls.append(("ensure", app))
+        return {"app": app, "window_title": app}
+
     def paste_into_app(self, app, text):
         self.calls.append(("paste", app, text))
         return f"Pasted into {app}. It was not sent."
@@ -305,7 +309,11 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(self.app_interactor.calls, [])
         second = self.agent.confirm(first.confirmation_token)
         self.assertTrue(second.requires_confirmation)
-        self.assertEqual(self.app_interactor.calls, [("read", "Discord")])
+        # The destination is opened up front, before the paste confirmation, so
+        # the confirmed paste never has to launch it and wait mid-open.
+        self.assertEqual(
+            self.app_interactor.calls, [("read", "Discord"), ("ensure", "Claude")]
+        )
         final = self.agent.confirm(second.confirmation_token)
         self.assertEqual(final.status, "success")
         self.assertFalse(final.data["sent"])

@@ -817,6 +817,10 @@ class JarvisAgent:
     ) -> AgentResponse:
         latest = self.app_interactor.latest_text(source)
         text = latest["text"]
+        # Open and settle the destination now, before we ask to paste, so the
+        # confirmed paste never has to launch an app and wait on it mid-open
+        # (which is what timed out while the permission prompt was up).
+        self.app_interactor.ensure_window(destination)
         preview = text if len(text) <= 240 else text[:237] + "..."
         return self._confirmation(
             "paste_app_text",
