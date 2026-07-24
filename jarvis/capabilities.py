@@ -39,6 +39,8 @@ CAPABILITIES = (
     Capability("notifications", "Windows notifications", "Productivity", "Show a local Windows notification.", examples=("Notify me stand up and stretch",)),
     Capability("memory", "Long-term memory", "Memory", "Save and recall preferences, facts and notes locally.", examples=("Remember editor is VS Code",)),
     Capability("reminders", "Persistent reminders", "Productivity", "Schedule reminders that survive dashboard refreshes.", examples=("Remind me in 20 minutes to stretch",)),
+    Capability("app_workflows", "Cross-app workflows", "Automation", "Read visible text from one open app and stage it in another through two confirmations. JARVIS never auto-sends.", "confirm", ("Transfer the latest message from Discord to Claude",)),
+    Capability("research", "Web research documents", "Web", "Open an isolated browser, review bounded public sources, close it, and create a sourced Word document.", "read", ("Research Windows AI assistants and save it to a document",)),
     Capability("routines", "Reusable routines", "Automation", "Save and run sequences of safe JARVIS commands.", examples=("Create routine work: open terminal | open github.com",)),
     Capability("power", "Power controls", "Computer", "Lock, sleep, restart or shut down with policy checks.", "confirm", ("Restart my computer",)),
     Capability("shell", "PowerShell", "Advanced", "Run explicit PowerShell only when enabled and confirmed.", "disabled", ("Run Get-Process",), "Enable Advanced shell control"),

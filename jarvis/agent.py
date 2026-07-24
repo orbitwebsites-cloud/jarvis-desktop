@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote_plus
 
@@ -15,6 +16,8 @@ from .memory import MemoryStore
 from .reminders import ReminderStore, RoutineStore
 from .windows import WindowsController
 from .intelligence import IntelligenceBridge
+from .app_interaction import AppInteractor
+from .web_research import WebResearcher
 
 
 @dataclass
@@ -39,6 +42,7 @@ class AgentResponse:
 class PendingAction:
     action: str
     detail: str
+    audit_detail: str
     expires_at: float
     callback: Callable[[], AgentResponse]
 
@@ -53,6 +57,8 @@ class JarvisAgent:
         intelligence: IntelligenceBridge | None = None,
         reminders: ReminderStore | None = None,
         routines: RoutineStore | None = None,
+        app_interactor: AppInteractor | None = None,
+        researcher: WebResearcher | None = None,
     ):
         self.controller = controller
         self.memory = memory
@@ -61,6 +67,9 @@ class JarvisAgent:
         self.intelligence = intelligence
         self.reminders = reminders
         self.routines = routines
+        self.app_interactor = app_interactor or AppInteractor(controller)
+        data_dir = Path(getattr(controller, "data_dir", Path.cwd() / "data"))
+        self.researcher = researcher or WebResearcher(data_dir, intelligence)
         self._pending: dict[str, PendingAction] = {}
         self._pending_lock = threading.RLock()
 
@@ -156,7 +165,10 @@ class JarvisAgent:
             return AgentResponse("error", "That confirmation is missing or has already been used.")
         if pending.expires_at < time.time():
             return AgentResponse("error", "That confirmation expired. Please ask again.")
-        self.audit.write("action_confirmed", {"action": pending.action, "detail": pending.detail})
+        self.audit.write(
+            "action_confirmed",
+            {"action": pending.action, "detail": pending.audit_detail},
+        )
         try:
             return pending.callback()
         except Exception as exc:
@@ -175,6 +187,7 @@ class JarvisAgent:
         title: str,
         detail: str,
         callback: Callable[[], AgentResponse],
+        audit_detail: str | None = None,
     ) -> AgentResponse:
         token = secrets.token_urlsafe(24)
         with self._pending_lock:
@@ -182,8 +195,14 @@ class JarvisAgent:
             self._pending = {
                 key: value for key, value in self._pending.items() if value.expires_at > now
             }
-            self._pending[token] = PendingAction(action, detail, now + 120, callback)
-        self.audit.write("confirmation_requested", {"action": action, "detail": detail})
+            safe_detail = audit_detail or detail
+            self._pending[token] = PendingAction(
+                action, detail, safe_detail, now + 120, callback
+            )
+        self.audit.write(
+            "confirmation_requested",
+            {"action": action, "detail": audit_detail or detail},
+        )
         return AgentResponse(
             "confirmation_required",
             f"Please confirm: {detail}",
@@ -207,7 +226,9 @@ class JarvisAgent:
                 "discover installed apps, manage windows, search files, use the clipboard "
                 "with confirmation, inspect processes, control display and media, take "
                 "screenshots, schedule reminders, run routines, manage notes and memories, "
-                "report system status, and perform confirmed power or shell actions.",
+                "transfer text between open apps with confirmation, research the public web "
+                "into a sourced Word document, report system status, and perform confirmed "
+                "power or shell actions.",
                 action="help",
                 data={"suggestions": self.suggestions()},
             )
@@ -235,6 +256,54 @@ class JarvisAgent:
         if command in {"date", "what is the date", "today's date", "what day is it"}:
             now = datetime.now()
             return AgentResponse("success", f"Today is {now:%A, %B %d, %Y}.", action="date")
+
+        transfer_match = (
+            re.match(
+                r"(?:go to\s+)?(.+?)[,\s]+copy (?:the )?latest "
+                r"(?:msg|message)(?:\s+from\s+there)?\s+and\s+paste "
+                r"(?:it\s+)?(?:in|into|to)\s+(.+)$",
+                spoken,
+                re.I,
+            )
+            or re.match(
+                r"(?:copy|transfer)\s+(?:the\s+)?latest\s+(?:msg|message)\s+"
+                r"from\s+(.+?)\s+(?:and\s+paste\s+(?:it\s+)?|to\s+)"
+                r"(?:in|into|to)?\s*(.+)$",
+                spoken,
+                re.I,
+            )
+        )
+        if transfer_match:
+            source = transfer_match.group(1).strip(" ,.")
+            destination = transfer_match.group(2).strip(" ,.")
+            return self._confirmation(
+                "read_app_text",
+                f"Read private text from {source}?",
+                f"Inspect visible accessibility text in {source} to find the latest message. "
+                f"Nothing will be pasted into {destination} yet.",
+                lambda: self._prepare_app_transfer(source, destination),
+                audit_detail=f"Read visible text from {source} for an app-to-app transfer.",
+            )
+
+        research_match = re.match(
+            r"(?:research(?: the web)?(?: for)?|search the web for)\s+(.+?)"
+            r"(?:\s+and\s+(?:put|save|write).*(?:doc|document))?$",
+            spoken,
+            re.I,
+        )
+        if research_match and (
+            command.startswith("research")
+            or re.search(r"\b(?:doc|document)\b", command)
+        ):
+            query = research_match.group(1).strip()
+            result = self.researcher.research(query)
+            return AgentResponse(
+                "success",
+                f"Research complete. I reviewed {len(result['sources'])} public sources "
+                f"and saved a Word document to {result['path']}.",
+                action="web_research",
+                data=result,
+            )
 
         match = re.match(
             r"(?:play|search(?: youtube)? for)\s+(.+?)(?:\s+on\s+youtube)?$",
@@ -592,6 +661,37 @@ class JarvisAgent:
                 data={"reminder": item},
             )
 
+        absolute_reminder_match = re.match(
+            r"remind me\s+(?:(today|tomorrow)\s+)?at\s+"
+            r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+(?:to|that)\s+(.+)",
+            raw,
+            re.I,
+        )
+        if absolute_reminder_match and self.reminders:
+            day_word, hour_raw, minute_raw, meridiem, text = absolute_reminder_match.groups()
+            hour = int(hour_raw)
+            minute = int(minute_raw or 0)
+            if minute > 59 or hour > (12 if meridiem else 23) or hour < 1:
+                return AgentResponse("error", "That reminder time is not valid.")
+            if meridiem:
+                hour = hour % 12 + (12 if meridiem.lower() == "pm" else 0)
+            now = datetime.now().astimezone()
+            due = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if day_word and day_word.lower() == "tomorrow":
+                due += timedelta(days=1)
+            elif not day_word and due <= now:
+                due += timedelta(days=1)
+            elif day_word and day_word.lower() == "today" and due <= now:
+                return AgentResponse("error", "That time has already passed today.")
+            item = self.reminders.add(text.strip(), due)
+            return AgentResponse(
+                "success",
+                f"I'll remind you {due.strftime('%A at %I:%M %p').replace(' 0', ' ')} "
+                f"to {text.strip()}.",
+                action="reminder_create",
+                data={"reminder": item},
+            )
+
         if command in {"reminders", "show reminders", "list reminders"} and self.reminders:
             items = self.reminders.list()
             return AgentResponse(
@@ -712,6 +812,32 @@ class JarvisAgent:
             data={"clipboard": text},
         )
 
+    def _prepare_app_transfer(
+        self, source: str, destination: str
+    ) -> AgentResponse:
+        latest = self.app_interactor.latest_text(source)
+        text = latest["text"]
+        preview = text if len(text) <= 240 else text[:237] + "..."
+        return self._confirmation(
+            "paste_app_text",
+            f"Paste into {destination}?",
+            f'Paste “{preview}” into {destination}. It will be inserted only, not sent.',
+            lambda: AgentResponse(
+                "success",
+                self.app_interactor.paste_into_app(destination, text),
+                action="paste_app_text",
+                data={
+                    "source_app": source,
+                    "destination_app": destination,
+                    "character_count": len(text),
+                    "sent": False,
+                },
+            ),
+            audit_detail=(
+                f"Paste {len(text)} characters from {source} into {destination}; do not send."
+            ),
+        )
+
     @staticmethod
     def _safe_routine_command(command: str) -> bool:
         lowered = command.lower().strip()
@@ -766,6 +892,8 @@ class JarvisAgent:
             "Take a screenshot",
             "What window is active",
             "Show reminders",
+            "Research the web for Windows AI assistants and save it to a document",
+            "Transfer the latest message from Discord to Claude",
             "Morning briefing",
             "Volume down",
             "Set a timer for 5 minutes",

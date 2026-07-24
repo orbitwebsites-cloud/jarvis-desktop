@@ -133,9 +133,11 @@ async function executeCommand(text, echo = true) {
   localStorage.removeItem("jarvis.commandDraft");
   setBusy(true, "JARVIS THINKING");
   try {
+    const researchCommand = /\bresearch\b|\b(?:save|put|write).*(?:doc|document)\b/i.test(command);
     const result = await api("/api/command", {
       method: "POST",
       body: JSON.stringify({ text: command }),
+      timeoutMs: researchCommand ? 120000 : undefined,
     });
     handleResult(result);
   } catch (error) {
@@ -197,6 +199,9 @@ function renderResultData(data) {
   } else if (typeof data.clipboard === "string") {
     title = "Clipboard text";
     lines = [data.clipboard || "(empty)"];
+  } else if (Array.isArray(data.sources)) {
+    title = "Research sources";
+    lines = data.sources.map((item, index) => `[${index + 1}] ${item.title} — ${item.url}`);
   }
   if (!lines.length) return;
   const card = document.createElement("div");
@@ -219,6 +224,21 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown time";
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function formatRelativeTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const absolute = Math.abs(seconds);
+  if (absolute < 45) return seconds >= 0 ? "in under a minute" : "due now";
+  const units = absolute < 3600
+    ? [Math.round(absolute / 60), "min"]
+    : absolute < 86400
+      ? [Math.round(absolute / 3600), "hr"]
+      : [Math.round(absolute / 86400), "day"];
+  const suffix = units[0] === 1 ? units[1] : `${units[1]}s`;
+  return seconds >= 0 ? `in ${units[0]} ${suffix}` : `${units[0]} ${suffix} overdue`;
 }
 
 function speak(text) {
@@ -396,12 +416,14 @@ async function refreshActivity() {
 }
 
 async function refreshPlanner() {
+  const reminderContainer = $("#reminderList");
+  reminderContainer.setAttribute("aria-busy", "true");
   const [reminderResult, routineResult] = await Promise.allSettled([
     api("/api/reminders"),
     api("/api/routines"),
   ]);
   if (reminderResult.status === "fulfilled") {
-    const container = $("#reminderList");
+    const container = reminderContainer;
     container.replaceChildren();
     const reminders = reminderResult.value.reminders.slice(0, 4);
     if (!reminders.length) {
@@ -416,7 +438,18 @@ async function refreshPlanner() {
       const title = document.createElement("strong");
       title.textContent = item.text;
       const due = document.createElement("small");
-      due.textContent = formatDateTime(item.due_at);
+      due.textContent = `${formatRelativeTime(item.due_at)} · ${formatDateTime(item.due_at)}`;
+      const actions = document.createElement("div");
+      actions.className = "planner-item-actions";
+      const snooze = document.createElement("button");
+      snooze.textContent = "SNOOZE 10M";
+      snooze.addEventListener("click", async () => {
+        await api("/api/reminders/snooze", {
+          method: "POST",
+          body: JSON.stringify({ id: item.id, minutes: 10 }),
+        });
+        refreshPlanner();
+      });
       const dismiss = document.createElement("button");
       dismiss.textContent = "DISMISS";
       dismiss.addEventListener("click", async () => {
@@ -426,9 +459,18 @@ async function refreshPlanner() {
         });
         refreshPlanner();
       });
-      row.append(title, due, dismiss);
+      actions.append(snooze, dismiss);
+      row.append(title, due, actions);
       container.append(row);
     });
+    container.setAttribute("aria-busy", "false");
+  } else {
+    reminderContainer.replaceChildren();
+    const error = document.createElement("p");
+    error.className = "empty-state";
+    error.textContent = "Reminders could not be loaded. JARVIS will retry.";
+    reminderContainer.append(error);
+    reminderContainer.setAttribute("aria-busy", "false");
   }
   if (routineResult.status === "fulfilled") {
     const container = $("#routineList");
@@ -569,12 +611,12 @@ $("#confirmAction").addEventListener("click", async (event) => {
   if (!token) return;
   setBusy(true, "EXECUTING");
   try {
+    state.pendingToken = null;
     const result = await api("/api/confirm", { method: "POST", body: JSON.stringify({ token }) });
     handleResult(result);
   } catch (error) {
     addMessage("assistant", error.message, true);
   } finally {
-    state.pendingToken = null;
     setBusy(false);
     refreshActivity();
   }
@@ -609,7 +651,7 @@ async function boot() {
     loadCapabilities(),
   ]);
   setInterval(refreshStatus, 8000);
-  setInterval(refreshPlanner, 30000);
+  setInterval(refreshPlanner, 10000);
   window.addEventListener("online", refreshStatus);
   window.addEventListener("offline", () => updateConnection(false, "This computer is offline."));
   document.addEventListener("visibilitychange", () => {

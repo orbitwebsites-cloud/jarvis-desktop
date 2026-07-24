@@ -285,6 +285,8 @@ h1 small { color: #536266; font-size: 11px; letter-spacing: .16em; }
   justify-self: start; padding: 0; border: 0; color: var(--cyan);
   background: transparent; font: 600 8px var(--mono); cursor: pointer;
 }
+.planner-item-actions { display: flex; justify-content: flex-end; gap: 5px; }
+.planner-item-actions button:first-child { color: var(--accent); }
 .activity-list { max-height: 190px; overflow-y: auto; display: grid; gap: 10px; }
 .activity-item { display: grid; grid-template-columns: 7px 1fr auto; gap: 9px; align-items: start; }
 .activity-item i { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--cyan-dim); }

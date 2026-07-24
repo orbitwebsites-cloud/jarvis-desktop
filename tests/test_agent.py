@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jarvis.agent import JarvisAgent
@@ -122,20 +123,52 @@ class FailingIntelligence:
     def _diagnostic_code(_detail):
         return "JARVIS-E202"
 
+class FakeAppInteractor:
+    def __init__(self):
+        self.calls = []
+        self.private_text = "meet me at the library"
+
+    def latest_text(self, app):
+        self.calls.append(("read", app))
+        return {"app": app, "window_title": app, "text": self.private_text}
+
+    def paste_into_app(self, app, text):
+        self.calls.append(("paste", app, text))
+        return f"Pasted into {app}. It was not sent."
+
+
+class FakeResearcher:
+    def __init__(self):
+        self.calls = []
+
+    def research(self, query):
+        self.calls.append(query)
+        return {
+            "query": query,
+            "summary": "A sourced summary.",
+            "path": r"C:\Documents\JARVIS Research\result.docx",
+            "sources": [{"title": "Source", "url": "https://example.com"}],
+        }
+
 
 class AgentTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.controller = FakeController()
+        self.app_interactor = FakeAppInteractor()
+        self.researcher = FakeResearcher()
         self.config = ConfigStore(root / "config.json")
+        self.audit_path = root / "audit.jsonl"
         self.agent = JarvisAgent(
             self.controller,
             MemoryStore(root / "memory.json"),
-            AuditLog(root / "audit.jsonl"),
+            AuditLog(self.audit_path),
             self.config,
             reminders=ReminderStore(root / "reminders.json"),
             routines=RoutineStore(root / "routines.json"),
+            app_interactor=self.app_interactor,
+            researcher=self.researcher,
         )
 
     def tearDown(self):
@@ -237,6 +270,60 @@ class AgentTests(unittest.TestCase):
         listed = self.agent.handle("show reminders")
         self.assertEqual(len(listed.data["reminders"]), 1)
         self.assertEqual(listed.data["reminders"][0]["text"], "stretch")
+
+    def test_absolute_reminder(self):
+        result = self.agent.handle("remind me tomorrow at 5:30 pm to call mom")
+        self.assertEqual(result.status, "success")
+        due = datetime.fromisoformat(result.data["reminder"]["due_at"]).astimezone()
+        self.assertEqual((due.hour, due.minute), (17, 30))
+
+    def test_delivered_reminder_leaves_active_list_and_can_be_snoozed(self):
+        store = self.agent.reminders
+        item = store.add("test", datetime.now(timezone.utc) - timedelta(seconds=1))
+        self.assertEqual(len(store.due()), 1)
+        self.assertTrue(store.mark_delivered(item["id"]))
+        self.assertEqual(store.list(), [])
+        snoozed = store.snooze(item["id"], 10)
+        self.assertIsNotNone(snoozed)
+        self.assertEqual(len(store.list()), 1)
+
+    def test_failed_reminder_delivery_is_kept_for_retry(self):
+        store = self.agent.reminders
+        item = store.add("retry me", datetime.now(timezone.utc) - timedelta(seconds=1))
+        self.assertTrue(store.mark_delivery_failed(item["id"]))
+        active = store.list()
+        self.assertEqual(len(active), 1)
+        self.assertFalse(active[0]["delivered"])
+        self.assertIn("next_attempt_at", active[0])
+        self.assertEqual(store.due(), [])
+
+    def test_cross_app_transfer_uses_two_confirmations_and_never_sends(self):
+        first = self.agent.handle(
+            "go to Discord copy the latest msg and paste it into Claude"
+        )
+        self.assertTrue(first.requires_confirmation)
+        self.assertEqual(self.app_interactor.calls, [])
+        second = self.agent.confirm(first.confirmation_token)
+        self.assertTrue(second.requires_confirmation)
+        self.assertEqual(self.app_interactor.calls, [("read", "Discord")])
+        final = self.agent.confirm(second.confirmation_token)
+        self.assertEqual(final.status, "success")
+        self.assertFalse(final.data["sent"])
+        self.assertIn(
+            ("paste", "Claude", self.app_interactor.private_text),
+            self.app_interactor.calls,
+        )
+        audit_text = self.audit_path.read_text(encoding="utf-8")
+        self.assertNotIn(self.app_interactor.private_text, audit_text)
+
+    def test_web_research_creates_structured_result(self):
+        result = self.agent.handle(
+            "research the web for Windows AI assistants and save it to a document"
+        )
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.action, "web_research")
+        self.assertEqual(self.researcher.calls, ["Windows AI assistants"])
+        self.assertTrue(result.data["path"].endswith(".docx"))
 
     def test_safe_routine_runs_and_unsafe_routine_is_blocked(self):
         created = self.agent.handle(

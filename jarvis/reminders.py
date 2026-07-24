@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -26,7 +26,15 @@ class ReminderStore:
                 value = json.loads(self.path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 value = {"reminders": []}
-            value.setdefault("reminders", [])
+            if not isinstance(value, dict):
+                value = {"reminders": []}
+            reminders = value.get("reminders")
+            if not isinstance(reminders, list):
+                value["reminders"] = []
+            else:
+                value["reminders"] = [
+                    item for item in reminders if isinstance(item, dict)
+                ]
             return value
 
     def _write(self, value: dict[str, Any]) -> None:
@@ -50,32 +58,88 @@ class ReminderStore:
         self._write(data)
         return item
 
-    def list(self, include_dismissed: bool = False) -> list[dict[str, Any]]:
+    def list(self, include_completed: bool = False) -> list[dict[str, Any]]:
         items = self._read()["reminders"]
-        if not include_dismissed:
-            items = [item for item in items if not item.get("dismissed")]
+        if not include_completed:
+            items = [
+                item
+                for item in items
+                if not item.get("dismissed") and not item.get("delivered")
+            ]
         return sorted(items, key=lambda item: item.get("due_at", ""))
 
-    def due(self, mark_delivered: bool = False) -> list[dict[str, Any]]:
+    def history(self, limit: int = 10) -> list[dict[str, Any]]:
+        items = [
+            item
+            for item in self._read()["reminders"]
+            if item.get("dismissed") or item.get("delivered")
+        ]
+        return sorted(items, key=lambda item: item.get("due_at", ""), reverse=True)[:limit]
+
+    def due(self) -> list[dict[str, Any]]:
         data = self._read()
         now = now_utc()
         due_items = []
-        changed = False
         for item in data["reminders"]:
             if item.get("dismissed") or item.get("delivered"):
                 continue
             try:
                 due_at = datetime.fromisoformat(item["due_at"])
+                next_attempt = datetime.fromisoformat(item["next_attempt_at"]) if item.get("next_attempt_at") else None
             except (KeyError, ValueError):
                 continue
-            if due_at <= now:
+            if due_at <= now and (next_attempt is None or next_attempt <= now):
                 due_items.append(item)
-                if mark_delivered:
-                    item["delivered"] = True
-                    changed = True
+        return due_items
+
+    def mark_delivered(self, reminder_id: str) -> bool:
+        data = self._read()
+        changed = False
+        for item in data["reminders"]:
+            if item.get("id") == reminder_id:
+                item["delivered"] = True
+                item["delivered_at"] = now_utc().isoformat()
+                item.pop("next_attempt_at", None)
+                changed = True
+                break
         if changed:
             self._write(data)
-        return due_items
+        return changed
+
+    def mark_delivery_failed(self, reminder_id: str) -> bool:
+        data = self._read()
+        changed = False
+        for item in data["reminders"]:
+            if item.get("id") == reminder_id:
+                attempts = int(item.get("delivery_attempts", 0)) + 1
+                retry_seconds = min(15 * 60, 30 * (2 ** min(attempts - 1, 5)))
+                item["delivery_attempts"] = attempts
+                item["next_attempt_at"] = (
+                    now_utc() + timedelta(seconds=retry_seconds)
+                ).isoformat()
+                changed = True
+                break
+        if changed:
+            self._write(data)
+        return changed
+
+    def snooze(self, reminder_id: str, minutes: int = 10) -> dict[str, Any] | None:
+        if not 1 <= minutes <= 7 * 24 * 60:
+            raise ValueError("Snooze must be between 1 minute and 7 days.")
+        data = self._read()
+        updated = None
+        for item in data["reminders"]:
+            if item.get("id") == reminder_id:
+                item["due_at"] = (now_utc() + timedelta(minutes=minutes)).isoformat()
+                item["delivered"] = False
+                item["dismissed"] = False
+                item.pop("delivered_at", None)
+                item.pop("next_attempt_at", None)
+                updated = item
+                break
+        if updated:
+            self._write(data)
+        return updated
 
     def dismiss(self, reminder_id: str) -> bool:
         data = self._read()
