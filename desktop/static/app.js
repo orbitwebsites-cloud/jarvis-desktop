@@ -8,6 +8,8 @@ const state = {
   consecutiveFailures: 0,
   lastOnlineAt: null,
   statusRefreshInFlight: false,
+  commandHistory: JSON.parse(localStorage.getItem("jarvis.commandHistory") || "[]"),
+  historyIndex: -1,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -121,7 +123,14 @@ async function executeCommand(text, echo = true) {
     }
   }
   if (echo) addMessage("user", command);
+  if (echo && state.commandHistory[0] !== command) {
+    state.commandHistory.unshift(command);
+    state.commandHistory = state.commandHistory.slice(0, 40);
+    localStorage.setItem("jarvis.commandHistory", JSON.stringify(state.commandHistory));
+  }
+  state.historyIndex = -1;
   commandInput.value = "";
+  localStorage.removeItem("jarvis.commandDraft");
   setBusy(true, "JARVIS THINKING");
   try {
     const result = await api("/api/command", {
@@ -182,6 +191,9 @@ function renderResultData(data) {
   } else if (data.window) {
     title = "Foreground window";
     lines = [`${data.window.title} · PID ${data.window.pid}`];
+  } else if (Array.isArray(data.windows)) {
+    title = "Visible windows";
+    lines = data.windows.map((item) => `${item.title} · PID ${item.pid}`);
   } else if (typeof data.clipboard === "string") {
     title = "Clipboard text";
     lines = [data.clipboard || "(empty)"];
@@ -338,7 +350,7 @@ async function refreshStatus() {
     chip.title = intelligence.available
       ? degraded
         ? `Last provider issue: ${intelligence.last_error || "temporary provider failure"}`
-        : "JARVIS intelligence core"
+        : `${intelligence.active_provider || "JARVIS"} · ${intelligence.active_model || "automatic model"} · ${intelligence.context_turns || 0} saved turns${intelligence.latency_ms ? ` · ${intelligence.latency_ms}ms` : ""}`
       : `Diagnostic: ${intelligence.diagnostic_code || "JARVIS-E204"}`;
   } catch (error) {
     state.consecutiveFailures += 1;
@@ -505,7 +517,37 @@ commandForm.addEventListener("submit", (event) => {
   event.preventDefault();
   executeCommand(commandInput.value);
 });
-$("#clearChat").addEventListener("click", () => messages.replaceChildren());
+$("#clearChat").addEventListener("click", async () => {
+  try {
+    await api("/api/context/clear", { method: "POST", body: "{}" });
+    messages.replaceChildren();
+    addMessage("assistant", "Fresh conversation started. Local memories and settings were kept.");
+    toast("Conversation context cleared.");
+  } catch (error) {
+    toast(error.message);
+  }
+});
+commandInput.value = localStorage.getItem("jarvis.commandDraft") || "";
+commandInput.addEventListener("input", () => {
+  localStorage.setItem("jarvis.commandDraft", commandInput.value);
+});
+commandInput.addEventListener("keydown", (event) => {
+  if (!["ArrowUp", "ArrowDown"].includes(event.key) || !state.commandHistory.length) return;
+  event.preventDefault();
+  if (event.key === "ArrowUp") {
+    state.historyIndex = Math.min(state.commandHistory.length - 1, state.historyIndex + 1);
+  } else {
+    state.historyIndex = Math.max(-1, state.historyIndex - 1);
+  }
+  commandInput.value = state.historyIndex < 0 ? "" : state.commandHistory[state.historyIndex];
+  commandInput.setSelectionRange(commandInput.value.length, commandInput.value.length);
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    commandInput.focus();
+  }
+});
 $("#refreshActivity").addEventListener("click", refreshActivity);
 $("#refreshPlanner").addEventListener("click", refreshPlanner);
 $("#activityButton").addEventListener("click", () => $(".activity-panel").scrollIntoView({ behavior: "smooth" }));
