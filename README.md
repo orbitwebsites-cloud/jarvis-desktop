@@ -1,4 +1,4 @@
-# JARVIS Desktop 2.0
+# JARVIS Desktop 2.1
 
 JARVIS is a local-first Windows command center for voice and text commands,
 application and website launching, window management, system telemetry,
@@ -11,10 +11,17 @@ reminders, routines, persistent memory, and optional AI reasoning.
 - Control media, volume, brightness, notifications, shortcuts, and screenshots.
 - Find files, inspect processes, and confirm before terminating a process.
 - Save local memories, notes, reminders, routines, and bounded conversation context.
+- Read the latest visible message from one open app and stage it in another through
+  a two-confirmation workflow; transferred text is never sent automatically.
+- Run bounded public-web research in a visible isolated browser, close the research
+  session, and save a sourced Word document under `Documents\JARVIS Research`.
+- Schedule relative or clock-time reminders, snooze them, and retry notification
+  delivery instead of silently losing failed alerts.
 - Use OmniRoute, Groq, Cerebras, or free OpenRouter models with bounded failover.
 - Show honest ready, degraded, and offline states without leaking provider details.
 
-Typing, clipboard reads, process termination, window closing, PowerShell, and
+Typing, private app reads/transfers, clipboard reads, process termination,
+window closing, PowerShell, and
 power actions require an explicit one-time confirmation. PowerShell is disabled
 by default.
 

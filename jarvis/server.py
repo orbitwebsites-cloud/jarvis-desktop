@@ -34,7 +34,7 @@ else:
     ROOT = Path(__file__).resolve().parent.parent
     DATA_DIR = ROOT / "data"
 STATIC_DIR = ROOT / "static"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 
 class JarvisApp:
@@ -70,15 +70,21 @@ class JarvisApp:
     def _deliver_reminders(self) -> None:
         while True:
             try:
-                for reminder in self.reminders.due(mark_delivered=True):
-                    self.controller.notify("JARVIS reminder", reminder["text"])
-                    self.audit.write(
-                        "reminder_delivered",
-                        {"id": reminder["id"], "text": reminder["text"][:200]},
-                    )
+                for reminder in self.reminders.due():
+                    try:
+                        self.controller.notify("JARVIS reminder", reminder["text"])
+                    except Exception as exc:
+                        self.reminders.mark_delivery_failed(reminder["id"])
+                        self.audit.write(
+                            "reminder_delivery_failed",
+                            {"id": reminder["id"], "error": str(exc)[:300]},
+                        )
+                        continue
+                    self.reminders.mark_delivered(reminder["id"])
+                    self.audit.write("reminder_delivered", {"id": reminder["id"]})
             except Exception as exc:
                 self.audit.write("reminder_error", {"error": str(exc)})
-            time.sleep(10)
+            time.sleep(2)
 
 
 APP = JarvisApp()
@@ -144,7 +150,12 @@ class JarvisHandler(BaseHTTPRequestHandler):
             self._json({"memory": APP.memory.snapshot()})
             return
         if path == "/api/reminders":
-            self._json({"reminders": APP.reminders.list()})
+            self._json(
+                {
+                    "reminders": APP.reminders.list(),
+                    "history": APP.reminders.history(8),
+                }
+            )
             return
         if path == "/api/routines":
             self._json({"routines": APP.routines.list()})
@@ -235,6 +246,21 @@ class JarvisHandler(BaseHTTPRequestHandler):
                     raise ValueError("A reminder id is required.")
                 dismissed = APP.reminders.dismiss(reminder_id)
                 self._json({"status": "dismissed" if dismissed else "not_found"})
+                return
+            if path == "/api/reminders/snooze":
+                reminder_id = body.get("id", "")
+                minutes = body.get("minutes", 10)
+                if not isinstance(reminder_id, str) or not reminder_id:
+                    raise ValueError("A reminder id is required.")
+                if not isinstance(minutes, int):
+                    raise ValueError("Snooze minutes must be a whole number.")
+                reminder = APP.reminders.snooze(reminder_id, minutes)
+                self._json(
+                    {
+                        "status": "snoozed" if reminder else "not_found",
+                        "reminder": reminder,
+                    }
+                )
                 return
             self._json({"error": "Not found."}, HTTPStatus.NOT_FOUND)
         except ValueError as exc:
