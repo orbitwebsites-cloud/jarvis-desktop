@@ -44,18 +44,21 @@ jobs:
           python -m pip install -r requirements-desktop.txt
 
       # Mirrors Build-JARVIS-Portable.ps1 so the CI artifact matches a local
-      # `npm run release`. Keep the flags in sync with that script.
+      # `npm run release`. Keep the flags in sync with that script. The static
+      # source must be absolute: PyInstaller resolves a relative --add-data
+      # source against the --specpath dir, not the working directory.
       - name: Build portable JARVIS.exe
-        run: >
-          python -m PyInstaller
-          --noconfirm --clean --onefile --windowed
-          --name JARVIS
-          --distpath dist-portable
-          --workpath build-portable
-          --specpath build-portable-spec
-          --add-data "static;static"
-          --hidden-import "webview.platforms.edgechromium"
-          jarvis_desktop_entry.py
+        run: |
+          $static = Join-Path $env:GITHUB_WORKSPACE 'static'
+          python -m PyInstaller `
+            --noconfirm --clean --onefile --windowed `
+            --name JARVIS `
+            --distpath dist-portable `
+            --workpath build-portable `
+            --specpath build-portable-spec `
+            --add-data "$static;static" `
+            --hidden-import "webview.platforms.edgechromium" `
+            jarvis_desktop_entry.py
 
       - name: Publish exe into site/
         run: Copy-Item -LiteralPath dist-portable/JARVIS.exe -Destination site/JARVIS.exe -Force
