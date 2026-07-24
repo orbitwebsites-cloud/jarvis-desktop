@@ -8,6 +8,12 @@ from typing import Any
 class AppInteractor:
     """Guarded Windows UI Automation helpers for attended app workflows."""
 
+    # How patient JARVIS is with a slow app, in one place. A freshly launched
+    # app can take several seconds to paint; focus can lag a newly shown window.
+    LAUNCH_TIMEOUT = 25.0
+    POLL_INTERVAL = 0.5
+    FOCUS_ATTEMPTS = 6
+
     COMMON_CHROME_TEXT = {
         "close",
         "maximize",
@@ -24,14 +30,18 @@ class AppInteractor:
 
     def __init__(self, controller: Any):
         self.controller = controller
+        self._desk: Any = None
 
-    @staticmethod
-    def _desktop():
-        try:
-            from pywinauto import Desktop
-        except ImportError as exc:
-            raise RuntimeError("App interaction support is not installed.") from exc
-        return Desktop(backend="uia")
+    def _desktop(self):
+        # Built once and reused; a poll loop otherwise rebuilds this wrapper
+        # dozens of times while waiting for an app to appear.
+        if self._desk is None:
+            try:
+                from pywinauto import Desktop
+            except ImportError as exc:
+                raise RuntimeError("App interaction support is not installed.") from exc
+            self._desk = Desktop(backend="uia")
+        return self._desk
 
     def _match_window(self, needle: str):
         matches = []
@@ -69,23 +79,22 @@ class AppInteractor:
         # A freshly launched app can take several seconds to paint its window,
         # so the timeout starts counting from the launch, not from the request.
         self.controller.open_app(query)
-        deadline = time.monotonic() + 25
+        deadline = time.monotonic() + self.LAUNCH_TIMEOUT
         while time.monotonic() < deadline:
-            time.sleep(0.5)
+            time.sleep(self.POLL_INTERVAL)
             found = self._match_window(needle)
             if found:
                 return found
         raise ValueError(f"I couldn't find or open a visible {query} window.")
 
-    def ensure_window(self, app_name: str) -> dict[str, str]:
+    def ensure_window(self, app_name: str) -> None:
         """Open the app (if needed) and wait for its window to appear.
 
         Called before the paste confirmation so the destination is launched and
         ready ahead of time — the confirmed action then never has to launch an
         app and wait on it, which is what used to time out mid-open.
         """
-        _, title = self._find_window(app_name)
-        return {"app": app_name, "window_title": title}
+        self._find_window(app_name)
 
     @classmethod
     def _useful_text(cls, text: str, app_name: str) -> bool:
@@ -151,17 +160,16 @@ class AppInteractor:
         # A window can be visible but not yet foreground right after it opens, so
         # retry the focus a few times instead of failing on the first check.
         needle = app_name.lower()
-        focused_title = ""
-        for attempt in range(6):
+        for attempt in range(self.FOCUS_ATTEMPTS):
             try:
                 window.set_focus()
             except Exception:
                 pass
-            time.sleep(0.25 if attempt == 0 else 0.5)
+            time.sleep(0.25 if attempt == 0 else self.POLL_INTERVAL)
             focused_title = self.controller.foreground_window().get("title", "")
             if needle in focused_title.lower():
                 break
-        if needle not in focused_title.lower():
+        else:
             raise RuntimeError(f"Windows did not focus the intended {app_name} window.")
 
         candidates = []
