@@ -1,8 +1,17 @@
 dist/
 .vercel/
+.playwright-cli/
 node_modules/
+.venv-desktop/
+build-portable/
+build-portable-spec/
+dist-portable/
+data/
 __pycache__/
 *.pyc
 
 .vercel
-.env*
+.env
+.env.local
+.env.*.local
+!.env.example

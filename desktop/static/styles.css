@@ -229,6 +229,8 @@ h1 small { color: #536266; font-size: 11px; letter-spacing: .16em; }
 .command-form button:hover { background: rgba(98,232,235,.13); }
 .command-form button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.4; }
 .command-form button:disabled { opacity: .5; cursor: wait; }
+.command-help { margin: 9px 2px 0; color: var(--muted); font: 500 8px var(--mono); letter-spacing: .05em; }
+.command-help kbd { padding: 1px 4px; border: 1px solid var(--line); color: #a8b9bb; background: rgba(255,255,255,.025); font: inherit; }
 
 .intel-panel { padding: 22px; }
 .online-label { color: var(--cyan); font: 600 8px var(--mono); letter-spacing: .14em; }

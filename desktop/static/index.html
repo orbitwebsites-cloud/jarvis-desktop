@@ -75,7 +75,7 @@
                 <span class="section-index">01</span>
                 <h2>Command stream</h2>
               </div>
-              <button class="text-button" id="clearChat">Clear display</button>
+              <button class="text-button" id="clearChat" title="Clear the visible chat and its saved conversational context">New conversation</button>
             </div>
             <div class="messages" id="messages" aria-live="polite">
               <article class="message assistant-message">
@@ -88,12 +88,13 @@
             <form class="command-form" id="commandForm">
               <label class="sr-only" for="commandInput">Command JARVIS</label>
               <span class="prompt-mark">›</span>
-              <input id="commandInput" autocomplete="off" placeholder="Ask anything or enter a computer command…" maxlength="4000">
+              <input id="commandInput" autocomplete="off" placeholder="Ask anything or enter a computer command…" maxlength="4000" aria-describedby="commandHelp">
               <button type="submit" id="sendButton">
                 <span>Execute</span>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-5-7-2Z"/><path d="m12 14 7-9"/></svg>
               </button>
             </form>
+            <p class="command-help" id="commandHelp"><kbd>Ctrl</kbd> + <kbd>K</kbd> focus · <kbd>↑</kbd>/<kbd>↓</kbd> history · context saves automatically</p>
           </section>
         </div>
 

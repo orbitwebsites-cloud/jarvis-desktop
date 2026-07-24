@@ -1,9 +1,12 @@
 {
   "name": "jarvis-desktop",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:vercel": "node scripts/build.mjs"
+    "build:vercel": "node scripts/build.mjs",
+    "test": "python -m unittest discover -s tests -v",
+    "build:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./Build-JARVIS-Portable.ps1",
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/Release-JARVIS.ps1"
   }
 }

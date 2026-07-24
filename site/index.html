@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#05090b">
-  <meta name="description" content="JARVIS Desktop, a reliable local Windows command center.">
-  <title>JARVIS Desktop // Release 1.1</title>
+  <meta name="description" content="JARVIS Desktop 2.0 — a fast, local-first Windows command center with voice, memory, AI failover, and guarded computer control.">
+  <title>JARVIS Desktop // Release 2.0</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -15,7 +16,7 @@
       <span class="brand-core"></span>
       <span>JARVIS</span>
     </a>
-    <div class="release-state"><i></i> RELEASE 1.1 // WINDOWS</div>
+    <div class="release-state"><i></i> RELEASE 2.0 // WINDOWS 10 & 11</div>
   </header>
 
   <main>
@@ -24,11 +25,11 @@
       <div class="hero-copy">
         <span class="eyebrow">Local intelligence system</span>
         <h1>Your computer.<br><em>Under command.</em></h1>
-        <p>Voice and text control for Windows, rebuilt to stay connected, recover from provider failures, and tell you the truth about its status.</p>
+        <p>A fast, local-first command center with voice, persistent context, live system telemetry, guarded computer control, OmniRoute support, and automatic free-model failover.</p>
         <div class="actions">
-          <a class="download" href="/JARVIS-Fixed.exe" download>
+          <a class="download" href="/JARVIS.exe" download>
             <span>Download for Windows</span>
-            <small>JARVIS-Fixed.exe · 12.4 MB</small>
+            <small id="downloadMeta">JARVIS.exe · checking size…</small>
           </a>
           <a class="secondary" href="#upgrades">See what changed</a>
         </div>
@@ -50,16 +51,16 @@
     </section>
 
     <section class="proof-strip" aria-label="Release highlights">
-      <div><strong>08s</strong><span>Health polling</span></div>
-      <div><strong>02×</strong><span>Bounded retry</span></div>
-      <div><strong>LOCAL</strong><span>Computer control</span></div>
-      <div><strong>HONEST</strong><span>Connection state</span></div>
+      <div><strong>28</strong><span>Automated checks</span></div>
+      <div><strong>&lt;28s</strong><span>Global AI deadline</span></div>
+      <div><strong>LOCAL</strong><span>Private memory</span></div>
+      <div><strong>GUARDED</strong><span>Risky actions</span></div>
     </section>
 
     <section class="upgrades" id="upgrades">
       <div class="section-heading">
-        <span>01 // RELIABILITY PATCH</span>
-        <h2>It no longer pretends<br>everything is fine.</h2>
+        <span>01 // JARVIS 2.0</span>
+        <h2>Built like an app.<br>Not a demo script.</h2>
       </div>
       <div class="cards">
         <article>
@@ -79,8 +80,28 @@
         </article>
         <article>
           <span class="number">04</span>
-          <h3>Better voice recovery</h3>
-          <p>Clear microphone and network errors plus correction for common JARVIS wake-word transcription mistakes.</p>
+          <h3>Persistent context</h3>
+          <p>Conversation context survives restarts, stays bounded on disk, and can be reset without deleting your memories.</p>
+        </article>
+        <article>
+          <span class="number">05</span>
+          <h3>Whole-PC control</h3>
+          <p>Launch apps and websites, search files, switch windows, control media, capture screens, and inspect system health.</p>
+        </article>
+        <article>
+          <span class="number">06</span>
+          <h3>Human authorization</h3>
+          <p>Typing, clipboard reads, process termination, shell commands, and power actions require a one-time confirmation.</p>
+        </article>
+        <article>
+          <span class="number">07</span>
+          <h3>OmniRoute ready</h3>
+          <p>Connect directly to a local OpenAI-compatible gateway and automatically start a configured OmniRoute service.</p>
+        </article>
+        <article>
+          <span class="number">08</span>
+          <h3>Reproducible release</h3>
+          <p>The complete Python source, tests, build scripts, dashboard, and release pipeline now live together in one repository.</p>
         </article>
       </div>
     </section>
@@ -88,12 +109,13 @@
     <section class="install">
       <div>
         <span class="eyebrow">Deployment sequence</span>
-        <h2>Close the old build.<br>Launch the repaired one.</h2>
+        <h2>Download once.<br>Command locally.</h2>
       </div>
       <ol>
-        <li><span>01</span><p>Download <strong>JARVIS-Fixed.exe</strong>.</p></li>
+        <li><span>01</span><p>Download <strong>JARVIS.exe</strong>.</p></li>
         <li><span>02</span><p>Close any older JARVIS window.</p></li>
         <li><span>03</span><p>Open the new EXE. Existing local settings and memory remain available.</p></li>
+        <li><span>04</span><p>For AI reasoning, connect OmniRoute or add your own provider keys to <strong>%LOCALAPPDATA%\JARVIS\.env</strong>.</p></li>
       </ol>
     </section>
   </main>

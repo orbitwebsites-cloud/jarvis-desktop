@@ -1,43 +1,77 @@
-# JARVIS Desktop
+# JARVIS Desktop 2.0
 
-JARVIS is a local Windows command center for voice and text commands, app and
-browser launching, system telemetry, reminders, routines, and optional AI
-reasoning.
+JARVIS is a local-first Windows command center for voice and text commands,
+application and website launching, window management, system telemetry,
+reminders, routines, persistent memory, and optional AI reasoning.
 
-## Current release
+## What it can do
 
-`JARVIS-Fixed.exe` is the reliability-hardened Windows build. It adds:
+- Open safe built-in apps, Start Menu apps, user folders, websites, and searches.
+- List, focus, minimize, maximize, restore, or confirm-close visible windows.
+- Control media, volume, brightness, notifications, shortcuts, and screenshots.
+- Find files, inspect processes, and confirm before terminating a process.
+- Save local memories, notes, reminders, routines, and bounded conversation context.
+- Use OmniRoute, Groq, Cerebras, or free OpenRouter models with bounded failover.
+- Show honest ready, degraded, and offline states without leaking provider details.
 
-- bounded provider retries and alternate-model failover;
-- recovery from empty provider responses;
-- optional local-model fallback;
-- real online, degraded, and offline connection states;
-- automatic health polling and reconnection;
-- request timeouts and persistent crash logging;
-- improved voice errors and common wake-word transcription handling.
+Typing, clipboard reads, process termination, window closing, PowerShell, and
+power actions require an explicit one-time confirmation. PowerShell is disabled
+by default.
 
-The original executable is unsigned, so this repaired build is also unsigned.
-Windows may show a SmartScreen warning.
+## Download
 
-## Architecture
+The current unsigned Windows build is `site/JARVIS.exe`. Windows SmartScreen may
+show a warning because this release is not code-signed.
 
-JARVIS runs locally because its computer-control features require access to the
-user's Windows session. Vercel hosts the release/download page only; it does not
-execute the local-control backend.
+## Run from source
 
-The `desktop/` folder contains the reliability overlay and repaired dashboard
-assets. The original build was supplied only as a PyInstaller executable, so
-the overlay expects the recovered Python 3.12 bytecode during a rebuild.
-
-## Build the release site
+Prerequisites: Windows 10/11 and Python 3.12 or newer.
 
 ```powershell
-npm.cmd run build
+.\Setup-JARVIS-Desktop.ps1
+.\Start-JARVIS-Desktop.ps1
 ```
 
-The static output is written to `dist/`.
+## Configure intelligence
+
+Copy `.env.example` to `%LOCALAPPDATA%\JARVIS\.env`. Add only provider keys you
+own. JARVIS never needs keys in the repository or website.
+
+For OmniRoute:
+
+```dotenv
+JARVIS_BASE_URL=http://127.0.0.1:20128/v1
+JARVIS_MODEL=your-model-id
+JARVIS_AUTOSTART_OMNIROUTE=true
+```
+
+If an existing local agent configuration already points to OmniRoute, JARVIS
+keeps compatibility with it. Direct `JARVIS_*` settings take priority.
+
+## Verify and build
+
+```powershell
+npm.cmd test
+npm.cmd run build
+npm.cmd run release
+```
+
+`npm run release` creates `dist-portable/JARVIS.exe` and copies the verified
+artifact into `site/JARVIS.exe`.
+
+## Repository map
+
+- `jarvis/` — complete Python backend and guarded Windows controls.
+- `static/` — desktop command-center interface.
+- `tests/` — unit tests for routing, safety, providers, and persistence.
+- `site/` — Vercel download site and current Windows artifact.
+- `scripts/` — static-site and release automation.
+- `desktop/` — compatibility overlay retained for older repaired builds.
+
+Runtime data stays under `%LOCALAPPDATA%\JARVIS`. Crash details are written to
+`%LOCALAPPDATA%\JARVIS\data\crash.log`.
 
 ## Security
 
-Never commit provider API keys. Existing JARVIS provider keys are loaded from
-the user's local JARVIS data directory at runtime.
+Never commit populated `.env` files or provider credentials. See
+[`SECURITY.md`](SECURITY.md) for the local threat model and reporting guidance.
