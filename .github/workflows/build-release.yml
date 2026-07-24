@@ -1,0 +1,75 @@
+name: Build release exe
+
+# Rebuilds the downloadable Windows binary (site/JARVIS.exe) from the current
+# source and commits it back, so the Vercel site always serves the latest app.
+# The exe is a PyInstaller build and can only be produced on Windows, so this
+# runs on a Windows runner rather than in the Linux Vercel build.
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild when something that affects the binary changes. site/** is
+    # deliberately excluded so the commit this workflow makes can't retrigger it.
+    paths:
+      - "jarvis/**"
+      - "desktop/**"
+      - "static/**"
+      - "jarvis_desktop_entry.py"
+      - "requirements-desktop.txt"
+      - "Build-JARVIS-Portable.ps1"
+      - "scripts/Release-JARVIS.ps1"
+      - ".github/workflows/build-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install desktop dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-desktop.txt
+
+      # Mirrors Build-JARVIS-Portable.ps1 so the CI artifact matches a local
+      # `npm run release`. Keep the flags in sync with that script.
+      - name: Build portable JARVIS.exe
+        run: >
+          python -m PyInstaller
+          --noconfirm --clean --onefile --windowed
+          --name JARVIS
+          --distpath dist-portable
+          --workpath build-portable
+          --specpath build-portable-spec
+          --add-data "static;static"
+          --hidden-import "webview.platforms.edgechromium"
+          jarvis_desktop_entry.py
+
+      - name: Publish exe into site/
+        run: Copy-Item -LiteralPath dist-portable/JARVIS.exe -Destination site/JARVIS.exe -Force
+
+      - name: Commit refreshed exe
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/JARVIS.exe
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "site/JARVIS.exe is already up to date; nothing to commit."
+          } else {
+            $hash = (Get-FileHash -LiteralPath site/JARVIS.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            git commit -m "ci: rebuild site/JARVIS.exe from ${{ github.sha }} (sha256 $hash)"
+            git push
+          }

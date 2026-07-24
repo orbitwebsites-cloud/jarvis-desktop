@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.1
+
+- Fixed the cross-app transfer timing out while an app was still launching: the
+  destination is now opened and settled before the paste confirmation, so the
+  confirmed action never has to launch an app and wait on it mid-open.
+- Made window discovery and focus resilient to a slow-launching app, and reused
+  a single UI Automation desktop handle across scans.
+- Added a Windows CI build that rebuilds the downloadable JARVIS.exe from source.
+
 ## 2.0.0
 
 - Added the complete backend source and reproducible Windows release pipeline.
